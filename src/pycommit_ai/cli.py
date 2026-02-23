@@ -11,7 +11,8 @@ from rich.text import Text
 
 from pycommit_ai.config import BUILTIN_SERVICES, del_config, get_config, get_config_path_str, list_configs, set_configs
 from pycommit_ai.errors import AIServiceError, KnownError
-from pycommit_ai.git import assert_git_repo, commit_changes, get_branch_name, get_staged_diff, run_git_command
+from pycommit_ai.git import assert_git_repo, commit_changes, get_branch_commits, get_branch_name, get_merge_base_diff, get_staged_diff, run_git_command
+from pycommit_ai.prompt import generate_pr_prompt
 from pycommit_ai.services.base import AIResponse, AIService
 from pycommit_ai.services.gemini import GeminiService
 from pycommit_ai.services.groq import GroqService
@@ -66,6 +67,67 @@ def _copy_to_clipboard(text: str):
                 raise KnownError("No clipboard tool found. Install xclip or xsel.")
 
 
+def _handle_pr_generation(locale: str = None):
+    """Generate a PR description from the branch diff and copy to clipboard."""
+    from google import genai
+    from google.genai import types
+
+    locale = locale or "en"
+    config = get_config()
+    branch = get_branch_name()
+
+    console.print(f"[bold]Generating PR description for branch:[/bold] {branch}\n")
+
+    # Get diff and commits from merge base
+    diff = get_merge_base_diff()
+
+    file_count = len(diff.files)
+    file_word = "file" if file_count == 1 else "files"
+    console.print(f"[green]✓[/green] [bold]{file_count} changed {file_word}:[/bold]")
+    for f in diff.files:
+        console.print(f"      {f}")
+    console.print()
+
+    commits = get_branch_commits()
+    console.print(f"[green]✓[/green] [bold]{len(commits)} commit(s) in branch[/bold]")
+    for c in commits:
+        console.print(f"      • {c}")
+    console.print()
+
+    # Find API key — use first available provider
+    api_key = config.get("GEMINI", {}).get("key")
+    model = config.get("GEMINI", {}).get("model", ["gemini-2.5-flash"])[0]
+
+    if not api_key:
+        raise KnownError("PR generation requires a Gemini API key. Run 'pycommit-ai config set GEMINI.key=YOUR_KEY'")
+
+    prompt = generate_pr_prompt(diff.diff, commits, locale)
+
+    with console.status("[bold green]Generating PR description..."):
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+                max_output_tokens=2048,
+            ),
+        )
+
+    if not response.text:
+        raise KnownError("Empty response from AI.")
+
+    pr_text = response.text.strip()
+    # Remove markdown fences if the AI wraps it
+    if pr_text.startswith("```"):
+        lines = pr_text.split("\n")
+        pr_text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+    _copy_to_clipboard(pr_text)
+    console.print("[bold green]PR description copied to clipboard![/bold green]\n")
+    console.print(pr_text)
+
+
 def get_available_services(config: dict, diff, branch_name: str) -> List[AIService]:
     """Return an instantiated list of AI services that have API keys configured."""
     services = []
@@ -97,9 +159,10 @@ def get_available_services(config: dict, diff, branch_name: str) -> List[AIServi
 @click.option("--confirm", "-y", is_flag=True, help="Automatically commit with the first generated message avoiding prompts")
 @click.option("--dry-run", "-d", is_flag=True, help="Only show the generated messages without committing")
 @click.option("--copy", "-c", is_flag=True, help="Copy the selected message to clipboard instead of committing")
+@click.option("--pr", is_flag=True, help="Generate a PR description from the current branch and copy to clipboard")
 @click.option("--exclude", "-x", multiple=True, help="Files to exclude from the diff")
 @click.pass_context
-def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, exclude):
+def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, exclude):
     """pycommit-ai — AI-generated Git commits."""
     if ctx.invoked_subcommand is not None:
         return
@@ -108,7 +171,11 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, exclude)
 
     try:
         assert_git_repo()
-        
+
+        if pr:
+            _handle_pr_generation(locale)
+            return
+
         if stage_all:
             run_git_command(["add", "-A"])
             

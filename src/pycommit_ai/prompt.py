@@ -196,3 +196,41 @@ def generate_user_prompt(diff: str) -> str:
         f"```diff\n{diff}\n```\n\n"
         "Focus on understanding the purpose and impact of these changes to create meaningful commit message(s)."
     )
+
+
+PR_TEMPLATE = """\
+In this PR ...
+
+## Type of Change
+
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+- [ ] Refactor / chore
+
+## Checklist
+
+- [ ] Code follows the project's style
+- [ ] Self-reviewed my own code
+- [ ] Tests pass locally (`uv run pytest`)
+- [ ] Documentation updated (if needed)
+"""
+
+
+def generate_pr_prompt(diff: str, commits: list[str], locale: str = "en") -> str:
+    commits_text = "\n".join(f"- {c}" for c in commits) if commits else "No commits found."
+
+    return (
+        "You are a Pull Request description writer.\n\n"
+        f"Write the PR description in {locale}.\n\n"
+        "Here is the PR template you MUST fill in:\n\n"
+        f"```\n{PR_TEMPLATE}```\n\n"
+        "Rules:\n"
+        "- Complete the 'In this PR ...' section with a clear, concise summary (2-4 lines max)\n"
+        "- Check the appropriate Type of Change checkbox(es) using [x]\n"
+        "- Do NOT modify the Checklist section, leave it as-is with [ ]\n"
+        "- Return ONLY the filled template as plain markdown, no code fences\n\n"
+        f"Commits in this branch:\n{commits_text}\n\n"
+        f"Full diff:\n```diff\n{diff}\n```"
+    )
