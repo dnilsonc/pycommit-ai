@@ -1,4 +1,5 @@
 import concurrent.futures
+import subprocess
 import sys
 from typing import List, Tuple
 
@@ -48,6 +49,23 @@ def print_banner():
     console.print()
 
 
+def _copy_to_clipboard(text: str):
+    """Copy text to the system clipboard."""
+    try:
+        # Try xclip first (Linux)
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+    except FileNotFoundError:
+        try:
+            # Try xsel (Linux)
+            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
+        except FileNotFoundError:
+            try:
+                # Try pbcopy (macOS)
+                subprocess.run(["pbcopy"], input=text.encode(), check=True)
+            except FileNotFoundError:
+                raise KnownError("No clipboard tool found. Install xclip or xsel.")
+
+
 def get_available_services(config: dict, diff, branch_name: str) -> List[AIService]:
     """Return an instantiated list of AI services that have API keys configured."""
     services = []
@@ -78,9 +96,10 @@ def get_available_services(config: dict, diff, branch_name: str) -> List[AIServi
 @click.option("--type", "-t", type=click.Choice(["conventional", "gitmoji", ""]), help="Type of commit message")
 @click.option("--confirm", "-y", is_flag=True, help="Automatically commit with the first generated message avoiding prompts")
 @click.option("--dry-run", "-d", is_flag=True, help="Only show the generated messages without committing")
+@click.option("--copy", "-c", is_flag=True, help="Copy the selected message to clipboard instead of committing")
 @click.option("--exclude", "-x", multiple=True, help="Files to exclude from the diff")
 @click.pass_context
-def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
+def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, exclude):
     """pycommit-ai — AI-generated Git commits."""
     if ctx.invoked_subcommand is not None:
         return
@@ -107,7 +126,13 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
         if not diff or not diff.files:
             console.print("[yellow]No staged files found. Please stage files using `git add` and try again.[/yellow]")
             sys.exit(0)
-            
+        
+        file_count = len(diff.files)
+        file_word = "file" if file_count == 1 else "files"
+        console.print(f"[green]✓[/green] [bold]Detected {file_count} staged {file_word}:[/bold]")
+        for f in diff.files:
+            console.print(f"      {f}")
+        console.print()
         branch_name = get_branch_name()
         services = get_available_services(config, diff, branch_name)
         
@@ -143,16 +168,17 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
             
         if confirm:
             chosen_msg = responses[0][1].value
+            chosen_title = responses[0][1].title
         else:
             choices = [
                 Choice(
-                    value=item.value,
+                    value=(item.title, item.value),
                     name=f"[{srv_name}] {item.title}"
                 )
                 for srv_name, item in responses
             ]
             
-            chosen_msg = inquirer.select(
+            chosen_title, chosen_msg = inquirer.select(
                 message="Pick a commit message to use:",
                 choices=choices,
                 instruction="(Use arrow keys or type to search)",
@@ -162,6 +188,9 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
         if dry_run:
             console.print("\n[bold]Dry run — Selected Message:[/bold]")
             console.print(chosen_msg)
+        elif copy:
+            _copy_to_clipboard(chosen_title)
+            console.print(f"\n[bold green]Commit message copied to clipboard![/bold green]")
         else:
             commit_changes(chosen_msg)
             console.print(f"\n[bold green]Successfully committed![/bold green]")

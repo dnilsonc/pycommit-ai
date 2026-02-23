@@ -17,20 +17,35 @@ Inspired by [aicommit2](https://github.com/tak-bro/aicommit2), rewritten in Pyth
 
 **Requirements:** Python ≥ 3.13, [uv](https://docs.astral.sh/uv/)
 
+### Global install (recommended)
+
 ```bash
-# Clone the repository
-git clone https://github.com/your-user/pycommit-ai.git
+# Install from GitHub
+uv tool install git+https://github.com/dnilsonc/pycommit-ai.git
+
+# Or clone and install locally
+git clone https://github.com/dnilsonc/pycommit-ai.git
 cd pycommit-ai
-
-# Install with uv
-uv sync
+uv tool install .
 ```
 
-Or install directly with pip:
+The `pycommit-ai` command will be available globally in any directory.
 
 ```bash
-pip install .
+# Update to latest version
+uv tool upgrade pycommit-ai
+
+# Uninstall
+uv tool uninstall pycommit-ai
 ```
+
+### Alternative methods
+
+| Method | Command |
+|--------|---------|
+| **pipx** | `pipx install git+https://github.com/dnilsonc/pycommit-ai.git` |
+| **pip** | `pip install git+https://github.com/dnilsonc/pycommit-ai.git` |
+| **Local dev** | `git clone ... && cd pycommit-ai && uv sync` |
 
 ## 🚀 Quick Start
 
@@ -75,6 +90,7 @@ pycommit-ai --all
 | `--type` | `-t` | Commit message style: `conventional` or `gitmoji` |
 | `--confirm` | `-y` | Auto-commit with the first generated message (no prompt) |
 | `--dry-run` | `-d` | Show generated messages without committing |
+| `--copy` | `-c` | Copy the selected message to clipboard instead of committing |
 | `--exclude` | `-x` | Files to exclude from the diff (can be used multiple times) |
 
 ### Examples
@@ -85,6 +101,9 @@ pycommit-ai -g 3 -l pt
 
 # Gitmoji style, stage all, dry run
 pycommit-ai -a -t gitmoji -d
+
+# Copy the message to clipboard instead of committing
+pycommit-ai -c
 
 # Auto-commit with the first suggestion
 pycommit-ai -y
