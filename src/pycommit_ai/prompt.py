@@ -15,8 +15,8 @@ DEFAULT_PROMPT_OPTIONS: Dict[str, Any] = {
 
 COMMIT_TYPE_FORMATS = {
     "": "<commit message>",
-    "conventional": "<type>(<optional scope>): <description>\n\n[optional body]\n\n[optional footer(s)]",
-    "gitmoji": ":<emoji>:(<optional scope>): <description>\n\n[optional body]\n\n[optional footer(s)]",
+    "conventional": "<type>(<optional scope>): <description>",
+    "gitmoji": ":<emoji>:(<optional scope>): <description>",
 }
 
 COMMIT_TYPES = {
@@ -132,20 +132,10 @@ def default_prompt(options: Dict[str, Any]) -> str:
         "  * build: Build system or external dependency changes",
         "  * ci: CI configuration changes",
         "- Scope: Extract from file paths or logical grouping (e.g., auth, api, ui)",
-        "- Body (when needed):",
-        "  * Explain the motivation for the change",
-        "  * Compare previous behavior with new behavior",
-        "  * Note any breaking changes or important details",
-        "- Footer: Include references to issues, breaking changes if applicable",
         "",
-        "## Analysis Approach:",
-        "1. Identify the primary purpose of the changes",
-        "2. Group related changes together",
-        "3. Determine the most appropriate type and scope",
-        "4. Write a clear, concise subject line",
-        "5. Add body details for complex changes",
-        "",
-        "Remember: The commit message should help future developers understand WHY this change was made, not just WHAT was changed.",
+        "## Important:",
+        "- Keep messages short and concise — subject line only, no body or footer.",
+        "- Focus on WHAT changed, not detailed explanations.",
     ]
     
     return "\n".join(lines)
@@ -160,23 +150,18 @@ def final_prompt(commit_type: str, generate: int, locale: str) -> str:
             for _ in range(generate):
                 example_objs.append(
                     '  {\n' +
-                    f'    "subject": "{loc_example["subject"]}",\n' +
-                    f'    "body": "{loc_example["body"]}",\n' +
-                    '    "footer": ""\n' +
+                    f'    "subject": "{loc_example["subject"]}"\n' +
                     '  }'
                 )
             return ",\n".join(example_objs)
         return ""
     
     lines = [
-        f"\nLastly, Provide your response as a JSON array containing exactly {generate} object{msg_plural}, each with the following keys:",
-        f'- "subject": The main commit message using the {commit_type} style. It should be a concise summary of the changes.',
-        '- "body": An optional detailed explanation of the changes. If not needed, use an empty string.',
-        '- "footer": An optional footer for metadata like BREAKING CHANGES. If not needed, use an empty string.',
+        f"\nProvide your response as a JSON array containing exactly {generate} object{msg_plural}, each with the following key:",
+        f'- "subject": The commit message using the {commit_type} style. Concise, max one line.',
         f"The array must always contain {generate} element{msg_plural}, no more and no less.",
         f"Example response format: \n[\n{get_example(commit_type)}\n]",
-        f"Ensure you generate exactly {generate} commit message{msg_plural}, even if it requires creating slightly varied versions for similar changes.",
-        "The response should be valid JSON that can be parsed without errors."
+        "The response must be valid, parseable JSON. Do NOT include body or footer fields."
     ]
     
     return "\n".join(lines)
@@ -210,4 +195,42 @@ def generate_user_prompt(diff: str) -> str:
         "Please analyze the following diff and generate commit message(s) based on the changes:\n\n"
         f"```diff\n{diff}\n```\n\n"
         "Focus on understanding the purpose and impact of these changes to create meaningful commit message(s)."
+    )
+
+
+PR_TEMPLATE = """\
+In this PR ...
+
+## Type of Change
+
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
+- [ ] Refactor / chore
+
+## Checklist
+
+- [ ] Code follows the project's style
+- [ ] Self-reviewed my own code
+- [ ] Tests pass locally (`uv run pytest`)
+- [ ] Documentation updated (if needed)
+"""
+
+
+def generate_pr_prompt(diff: str, commits: list[str], locale: str = "en") -> str:
+    commits_text = "\n".join(f"- {c}" for c in commits) if commits else "No commits found."
+
+    return (
+        "You are a Pull Request description writer.\n\n"
+        f"Write the PR description in {locale}.\n\n"
+        "Here is the PR template you MUST fill in:\n\n"
+        f"```\n{PR_TEMPLATE}```\n\n"
+        "Rules:\n"
+        "- Complete the 'In this PR ...' section with a clear, concise summary (2-4 lines max)\n"
+        "- Check the appropriate Type of Change checkbox(es) using [x]\n"
+        "- Do NOT modify the Checklist section, leave it as-is with [ ]\n"
+        "- Return ONLY the filled template as plain markdown, no code fences\n\n"
+        f"Commits in this branch:\n{commits_text}\n\n"
+        f"Full diff:\n```diff\n{diff}\n```"
     )

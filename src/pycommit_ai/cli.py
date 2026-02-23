@@ -1,4 +1,5 @@
 import concurrent.futures
+import subprocess
 import sys
 from typing import List, Tuple
 
@@ -10,7 +11,8 @@ from rich.text import Text
 
 from pycommit_ai.config import BUILTIN_SERVICES, del_config, get_config, get_config_path_str, list_configs, set_configs
 from pycommit_ai.errors import AIServiceError, KnownError
-from pycommit_ai.git import assert_git_repo, commit_changes, get_branch_name, get_staged_diff, run_git_command
+from pycommit_ai.git import assert_git_repo, commit_changes, get_branch_commits, get_branch_name, get_merge_base_diff, get_staged_diff, run_git_command
+from pycommit_ai.prompt import generate_pr_prompt
 from pycommit_ai.services.base import AIResponse, AIService
 from pycommit_ai.services.gemini import GeminiService
 from pycommit_ai.services.groq import GroqService
@@ -48,6 +50,84 @@ def print_banner():
     console.print()
 
 
+def _copy_to_clipboard(text: str):
+    """Copy text to the system clipboard."""
+    try:
+        # Try xclip first (Linux)
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+    except FileNotFoundError:
+        try:
+            # Try xsel (Linux)
+            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
+        except FileNotFoundError:
+            try:
+                # Try pbcopy (macOS)
+                subprocess.run(["pbcopy"], input=text.encode(), check=True)
+            except FileNotFoundError:
+                raise KnownError("No clipboard tool found. Install xclip or xsel.")
+
+
+def _handle_pr_generation(locale: str = None):
+    """Generate a PR description from the branch diff and copy to clipboard."""
+    from google import genai
+    from google.genai import types
+
+    locale = locale or "en"
+    config = get_config()
+    branch = get_branch_name()
+
+    console.print(f"[bold]Generating PR description for branch:[/bold] {branch}\n")
+
+    # Get diff and commits from merge base
+    diff = get_merge_base_diff()
+
+    file_count = len(diff.files)
+    file_word = "file" if file_count == 1 else "files"
+    console.print(f"[green]✓[/green] [bold]{file_count} changed {file_word}:[/bold]")
+    for f in diff.files:
+        console.print(f"      {f}")
+    console.print()
+
+    commits = get_branch_commits()
+    console.print(f"[green]✓[/green] [bold]{len(commits)} commit(s) in branch[/bold]")
+    for c in commits:
+        console.print(f"      • {c}")
+    console.print()
+
+    # Find API key — use first available provider
+    api_key = config.get("GEMINI", {}).get("key")
+    model = config.get("GEMINI", {}).get("model", ["gemini-2.5-flash"])[0]
+
+    if not api_key:
+        raise KnownError("PR generation requires a Gemini API key. Run 'pycommit-ai config set GEMINI.key=YOUR_KEY'")
+
+    prompt = generate_pr_prompt(diff.diff, commits, locale)
+
+    with console.status("[bold green]Generating PR description..."):
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+                max_output_tokens=2048,
+            ),
+        )
+
+    if not response.text:
+        raise KnownError("Empty response from AI.")
+
+    pr_text = response.text.strip()
+    # Remove markdown fences if the AI wraps it
+    if pr_text.startswith("```"):
+        lines = pr_text.split("\n")
+        pr_text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+    _copy_to_clipboard(pr_text)
+    console.print("[bold green]PR description copied to clipboard![/bold green]\n")
+    console.print(pr_text)
+
+
 def get_available_services(config: dict, diff, branch_name: str) -> List[AIService]:
     """Return an instantiated list of AI services that have API keys configured."""
     services = []
@@ -78,9 +158,11 @@ def get_available_services(config: dict, diff, branch_name: str) -> List[AIServi
 @click.option("--type", "-t", type=click.Choice(["conventional", "gitmoji", ""]), help="Type of commit message")
 @click.option("--confirm", "-y", is_flag=True, help="Automatically commit with the first generated message avoiding prompts")
 @click.option("--dry-run", "-d", is_flag=True, help="Only show the generated messages without committing")
+@click.option("--copy", "-c", is_flag=True, help="Copy the selected message to clipboard instead of committing")
+@click.option("--pr", is_flag=True, help="Generate a PR description from the current branch and copy to clipboard")
 @click.option("--exclude", "-x", multiple=True, help="Files to exclude from the diff")
 @click.pass_context
-def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
+def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, exclude):
     """pycommit-ai — AI-generated Git commits."""
     if ctx.invoked_subcommand is not None:
         return
@@ -89,7 +171,11 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
 
     try:
         assert_git_repo()
-        
+
+        if pr:
+            _handle_pr_generation(locale)
+            return
+
         if stage_all:
             run_git_command(["add", "-A"])
             
@@ -107,7 +193,13 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
         if not diff or not diff.files:
             console.print("[yellow]No staged files found. Please stage files using `git add` and try again.[/yellow]")
             sys.exit(0)
-            
+        
+        file_count = len(diff.files)
+        file_word = "file" if file_count == 1 else "files"
+        console.print(f"[green]✓[/green] [bold]Detected {file_count} staged {file_word}:[/bold]")
+        for f in diff.files:
+            console.print(f"      {f}")
+        console.print()
         branch_name = get_branch_name()
         services = get_available_services(config, diff, branch_name)
         
@@ -143,16 +235,17 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
             
         if confirm:
             chosen_msg = responses[0][1].value
+            chosen_title = responses[0][1].title
         else:
             choices = [
                 Choice(
-                    value=item.value,
+                    value=(item.title, item.value),
                     name=f"[{srv_name}] {item.title}"
                 )
                 for srv_name, item in responses
             ]
             
-            chosen_msg = inquirer.select(
+            chosen_title, chosen_msg = inquirer.select(
                 message="Pick a commit message to use:",
                 choices=choices,
                 instruction="(Use arrow keys or type to search)",
@@ -162,6 +255,9 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, exclude):
         if dry_run:
             console.print("\n[bold]Dry run — Selected Message:[/bold]")
             console.print(chosen_msg)
+        elif copy:
+            _copy_to_clipboard(chosen_title)
+            console.print(f"\n[bold green]Commit message copied to clipboard![/bold green]")
         else:
             commit_changes(chosen_msg)
             console.print(f"\n[bold green]Successfully committed![/bold green]")

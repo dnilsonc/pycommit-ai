@@ -120,3 +120,39 @@ def commit_changes(message: str, raw_argv: List[str] = None):
         run_git_command(["commit", "-m", message], check=True)
     except subprocess.CalledProcessError as e:
         raise KnownError(f"Failed to commit changes: {e.stderr}")
+
+
+def get_merge_base(target_branch: str = "main") -> str:
+    """Find the merge base between the current branch and the target branch."""
+    # Try main first, then master
+    for branch in [target_branch, "main", "master"]:
+        result = run_git_command(["merge-base", "HEAD", branch], check=False)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    raise KnownError("Could not find merge base. Make sure 'main' or 'master' branch exists.")
+
+
+def get_merge_base_diff(target_branch: str = "main") -> GitDiff:
+    """Get the diff between the current branch HEAD and the merge base."""
+    base = get_merge_base(target_branch)
+
+    # Get changed file names
+    files_result = run_git_command(["diff", "--name-only", base, "HEAD"] + FILES_TO_EXCLUDE, check=False)
+    files = [f for f in files_result.stdout.strip().split("\n") if f] if files_result.stdout.strip() else []
+
+    if not files:
+        raise KnownError("No changes found between current branch and base branch.")
+
+    # Get the diff
+    diff_result = run_git_command(["diff", "--diff-algorithm=minimal", base, "HEAD"] + FILES_TO_EXCLUDE, check=True)
+
+    return GitDiff(files=files, diff=diff_result.stdout)
+
+
+def get_branch_commits(target_branch: str = "main") -> List[str]:
+    """Get the list of commit messages between the merge base and HEAD."""
+    base = get_merge_base(target_branch)
+    result = run_git_command(["log", "--pretty=format:%s", f"{base}..HEAD"], check=False)
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    return [line for line in result.stdout.strip().split("\n") if line]
