@@ -11,7 +11,9 @@ Inspired by [aicommit2](https://github.com/tak-bro/aicommit2), rewritten in Pyth
 - 🌍 **Multilingual** — generate messages in any locale (e.g., `en`, `pt`, `es`)
 - ⚡ **Concurrent generation** — queries all configured providers at once
 - 🎨 **Interactive selection** — pick the best message from all suggestions
+- 🚀 **Pull Request Generation** — generates PR descriptions from branch diffs
 - 🔧 **Flexible configuration** — INI file, environment variables, or CLI flags
+- ⌨️ **Quick alias** — use `pyc` as a fast shortcut for `pycommit-ai`
 
 ## 📦 Installation
 
@@ -29,7 +31,9 @@ cd pycommit-ai
 uv tool install .
 ```
 
-The `pycommit-ai` command will be available globally in any directory.
+```
+
+The `pycommit-ai` command (and its short alias `pyc`) will be available globally in any directory.
 
 ```bash
 # Update to latest version
@@ -77,7 +81,13 @@ pycommit-ai
 Or stage everything automatically:
 
 ```bash
-pycommit-ai --all
+pyc --all
+```
+
+### 3. Generate a Pull Request description
+
+```bash
+pyc --pr
 ```
 
 ## 🏳️ CLI Flags
@@ -92,6 +102,7 @@ pycommit-ai --all
 | `--dry-run` | `-d` | Show generated messages without committing |
 | `--copy` | `-c` | Copy the selected message to clipboard instead of committing |
 | `--exclude` | `-x` | Files to exclude from the diff (can be used multiple times) |
+| `--print-prompt` | `-p` | Don't use AI, just print and copy the generated prompt |
 
 ### Examples
 
@@ -109,8 +120,16 @@ pycommit-ai -c
 pycommit-ai -y
 
 # Exclude lock files from the diff
-pycommit-ai -x uv.lock -x package-lock.json
+pyc -x another-file.txt
+
+# Generate a PR description and copy to clipboard
+pyc --pr
+
+# Just print the prompt that the AI would receive (useful for external UIs)
+pyc --pr --print-prompt
 ```
+
+> **Note:** Common lock files (`uv.lock`, `poetry.lock`, `package-lock.json`, etc.) are excluded from the diff by default.
 
 ## ⚙️ Configuration
 

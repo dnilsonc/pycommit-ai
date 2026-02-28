@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 pycommit-ai = "pycommit_ai.cli:main"
+pyc = "pycommit_ai.cli:main"
 
 [build-system]
 requires = ["hatchling"]

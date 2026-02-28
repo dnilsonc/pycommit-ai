@@ -1,5 +1,3 @@
-import concurrent.futures
-import subprocess
 import sys
 from typing import List, Tuple
 
@@ -9,15 +7,12 @@ from InquirerPy.base.control import Choice
 from rich.console import Console
 from rich.text import Text
 
-from pycommit_ai.config import BUILTIN_SERVICES, del_config, get_config, get_config_path_str, list_configs, set_configs
-from pycommit_ai.errors import AIServiceError, KnownError
+from pycommit_ai.config import del_config, get_config, get_config_path_str, list_configs, set_configs
+from pycommit_ai.core import generate_commits_parallel, generate_pr_description
+from pycommit_ai.errors import KnownError
 from pycommit_ai.git import assert_git_repo, commit_changes, get_branch_commits, get_branch_name, get_merge_base_diff, get_staged_diff, run_git_command
-from pycommit_ai.prompt import generate_pr_prompt
-from pycommit_ai.services.base import AIResponse, AIService
-from pycommit_ai.services.gemini import GeminiService
-from pycommit_ai.services.groq import GroqService
-from pycommit_ai.services.openai_service import OpenAIService
-from pycommit_ai.services.openrouter import OpenRouterService
+from pycommit_ai.services import AIResponse, get_available_services
+from pycommit_ai.utils import copy_to_clipboard
 
 console = Console()
 
@@ -50,36 +45,15 @@ def print_banner():
     console.print()
 
 
-def _copy_to_clipboard(text: str):
-    """Copy text to the system clipboard."""
-    try:
-        # Try xclip first (Linux)
-        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
-    except FileNotFoundError:
-        try:
-            # Try xsel (Linux)
-            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
-        except FileNotFoundError:
-            try:
-                # Try pbcopy (macOS)
-                subprocess.run(["pbcopy"], input=text.encode(), check=True)
-            except FileNotFoundError:
-                raise KnownError("No clipboard tool found. Install xclip or xsel.")
-
-
-def _handle_pr_generation(locale: str = None):
-    """Generate a PR description from the branch diff and copy to clipboard."""
-    from google import genai
-    from google.genai import types
-
+def _handle_pr_command(locale: str = None, print_prompt: bool = False):
+    """Facade for the PR generation interaction."""
     locale = locale or "en"
     config = get_config()
     branch = get_branch_name()
 
     console.print(f"[bold]Generating PR description for branch:[/bold] {branch}\n")
 
-    # Get diff and commits from merge base
-    diff = get_merge_base_diff()
+    diff = get_merge_base_diff(config_exclude=config.get("excludes", []))
 
     file_count = len(diff.files)
     file_word = "file" if file_count == 1 else "files"
@@ -94,61 +68,18 @@ def _handle_pr_generation(locale: str = None):
         console.print(f"      • {c}")
     console.print()
 
-    # Find API key — use first available provider
-    api_key = config.get("GEMINI", {}).get("key")
-    model = config.get("GEMINI", {}).get("model", ["gemini-2.5-flash"])[0]
+    if print_prompt:
+        pr_text = generate_pr_description(config, branch, diff, commits, locale, print_prompt=True)
+        copy_to_clipboard(pr_text)
+        console.print("[bold green]PR prompt copied to clipboard![/bold green]\n")
+        console.print(pr_text)
+    else:
+        with console.status("[bold green]Generating PR description..."):
+            pr_text = generate_pr_description(config, branch, diff, commits, locale)
 
-    if not api_key:
-        raise KnownError("PR generation requires a Gemini API key. Run 'pycommit-ai config set GEMINI.key=YOUR_KEY'")
-
-    prompt = generate_pr_prompt(diff.diff, commits, locale)
-
-    with console.status("[bold green]Generating PR description..."):
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.4,
-                max_output_tokens=2048,
-            ),
-        )
-
-    if not response.text:
-        raise KnownError("Empty response from AI.")
-
-    pr_text = response.text.strip()
-    # Remove markdown fences if the AI wraps it
-    if pr_text.startswith("```"):
-        lines = pr_text.split("\n")
-        pr_text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-
-    _copy_to_clipboard(pr_text)
-    console.print("[bold green]PR description copied to clipboard![/bold green]\n")
-    console.print(pr_text)
-
-
-def get_available_services(config: dict, diff, branch_name: str) -> List[AIService]:
-    """Return an instantiated list of AI services that have API keys configured."""
-    services = []
-    
-    if config.get("GEMINI", {}).get("key"):
-        for model in config["GEMINI"].get("model", ["gemini-2.5-flash"]):
-            services.append(GeminiService(config, config["GEMINI"], diff, model))
-            
-    if config.get("OPENAI", {}).get("key"):
-        for model in config["OPENAI"].get("model", ["gpt-4o-mini"]):
-            services.append(OpenAIService(config, config["OPENAI"], diff, model))
-            
-    if config.get("GROQ", {}).get("key"):
-        for model in config["GROQ"].get("model", ["llama3-8b-8192"]):
-            services.append(GroqService(config, config["GROQ"], diff, model))
-            
-    if config.get("OPENROUTER", {}).get("key"):
-        for model in config["OPENROUTER"].get("model", ["google/gemini-2.0-flash-001"]):
-            services.append(OpenRouterService(config, config["OPENROUTER"], diff, model))
-            
-    return services
+        copy_to_clipboard(pr_text)
+        console.print("[bold green]PR description copied to clipboard![/bold green]\n")
+        console.print(pr_text)
 
 
 @click.group(invoke_without_command=True)
@@ -161,8 +92,9 @@ def get_available_services(config: dict, diff, branch_name: str) -> List[AIServi
 @click.option("--copy", "-c", is_flag=True, help="Copy the selected message to clipboard instead of committing")
 @click.option("--pr", is_flag=True, help="Generate a PR description from the current branch and copy to clipboard")
 @click.option("--exclude", "-x", multiple=True, help="Files to exclude from the diff")
+@click.option("--print-prompt", "-p", is_flag=True, help="Don't use AI, just print and copy the generated prompt")
 @click.pass_context
-def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, exclude):
+def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, exclude, print_prompt):
     """pycommit-ai — AI-generated Git commits."""
     if ctx.invoked_subcommand is not None:
         return
@@ -173,7 +105,7 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, excl
         assert_git_repo()
 
         if pr:
-            _handle_pr_generation(locale)
+            _handle_pr_command(locale, print_prompt)
             return
 
         if stage_all:
@@ -186,10 +118,12 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, excl
             cli_overrides["generate"] = generate
         if type is not None:
             cli_overrides["type"] = type
+        if exclude:
+            cli_overrides["excludes"] = list(exclude)
             
         config = get_config(cli_overrides)
         
-        diff = get_staged_diff(exclude_files=list(exclude))
+        diff = get_staged_diff(config_exclude=config.get("excludes", []))
         if not diff or not diff.files:
             console.print("[yellow]No staged files found. Please stage files using `git add` and try again.[/yellow]")
             sys.exit(0)
@@ -210,24 +144,14 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, excl
             
         responses: List[Tuple[str, AIResponse]] = []
         
-        with console.status("[bold green]Generating commit messages...") as status:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future_to_service = {
-                    executor.submit(srv.generate_commit_messages): f"{srv.__class__.__name__.replace('Service', '')} ({srv.model_name})"
-                    for srv in services
-                }
-                
-                for future in concurrent.futures.as_completed(future_to_service):
-                    srv_name = future_to_service[future]
-                    try:
-                        results = future.result()
-                        for r in results:
-                            responses.append((srv_name, r))
-                        console.print(f"[green]✓[/green] Generated from {srv_name}")
-                    except AIServiceError as e:
-                        console.print(f"[red]✗[/red] Error from {srv_name}: {e}")
-                    except Exception as e:
-                        console.print(f"[red]✗[/red] Unexpected error from {srv_name}: {e}")
+        with console.status("[bold green]Generating commit messages..."):
+            for status, srv_name, result in generate_commits_parallel(services):
+                if status == "success":
+                    for r in result:
+                        responses.append((srv_name, r))
+                    console.print(f"[green]✓[/green] Generated from {srv_name}")
+                else:
+                    console.print(f"[red]✗[/red] Error from {srv_name}: {result}")
                         
         if not responses:
             console.print("[red]Failed to generate any commit messages.[/red]")
@@ -256,7 +180,7 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, excl
             console.print("\n[bold]Dry run — Selected Message:[/bold]")
             console.print(chosen_msg)
         elif copy:
-            _copy_to_clipboard(chosen_title)
+            copy_to_clipboard(chosen_title)
             console.print(f"\n[bold green]Commit message copied to clipboard![/bold green]")
         else:
             commit_changes(chosen_msg)
