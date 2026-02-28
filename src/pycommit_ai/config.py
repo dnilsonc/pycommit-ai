@@ -17,6 +17,7 @@ DEFAULT_TIMEOUT = 10000
 DEFAULT_MAX_TOKENS = 2048
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_TOP_P = 1.0
+DEFAULT_EXCLUDES = ["package-lock.json", "pnpm-lock.yaml", "*.lock", "*.lockb", "uv.lock", "poetry.lock"]
 
 
 def _get_config_path() -> Path:
@@ -64,6 +65,13 @@ def get_config(cli_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]
         "systemPrompt": cli_overrides.get("systemPrompt") or parser.get("general", "systemPrompt", fallback=""),
         "systemPromptPath": cli_overrides.get("systemPromptPath") or parser.get("general", "systemPromptPath", fallback=""),
     }
+    
+    # Process excludes format (can be string or list)
+    excludes_val = cli_overrides.get("excludes") or parser.get("general", "excludes", fallback=",".join(DEFAULT_EXCLUDES))
+    if isinstance(excludes_val, str):
+        config["excludes"] = [e.strip() for e in excludes_val.split(",") if e.strip()]
+    else:
+        config["excludes"] = excludes_val
     
     # Defaults depending on provider
     provider_defaults = {

@@ -46,25 +46,12 @@ def _exclude_from_diff(path: str) -> str:
     return f":(exclude){path}"
 
 
-FILES_TO_EXCLUDE = [
-    _exclude_from_diff(f)
-    for f in [
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "*.lock",
-        "*.lockb",
-        "uv.lock",
-        "poetry.lock",
-    ]
-]
-
-
 def get_staged_diff(exclude_files: Optional[List[str]] = None, config_exclude: Optional[List[str]] = None) -> Optional[GitDiff]:
     """Get the staged git diff."""
     exclude_files = exclude_files or []
     config_exclude = config_exclude or []
 
-    exclude_args = FILES_TO_EXCLUDE + [
+    exclude_args = [
         _exclude_from_diff(f) for f in exclude_files
     ] + [
         _exclude_from_diff(f) for f in config_exclude
@@ -132,19 +119,24 @@ def get_merge_base(target_branch: str = "main") -> str:
     raise KnownError("Could not find merge base. Make sure 'main' or 'master' branch exists.")
 
 
-def get_merge_base_diff(target_branch: str = "main") -> GitDiff:
+def get_merge_base_diff(target_branch: str = "main", config_exclude: Optional[List[str]] = None) -> GitDiff:
     """Get the diff between the current branch HEAD and the merge base."""
     base = get_merge_base(target_branch)
+    config_exclude = config_exclude or []
+
+    exclude_args = [
+        _exclude_from_diff(f) for f in config_exclude
+    ]
 
     # Get changed file names
-    files_result = run_git_command(["diff", "--name-only", base, "HEAD"] + FILES_TO_EXCLUDE, check=False)
+    files_result = run_git_command(["diff", "--name-only", base, "HEAD"] + exclude_args, check=False)
     files = [f for f in files_result.stdout.strip().split("\n") if f] if files_result.stdout.strip() else []
 
     if not files:
         raise KnownError("No changes found between current branch and base branch.")
 
     # Get the diff
-    diff_result = run_git_command(["diff", "--diff-algorithm=minimal", base, "HEAD"] + FILES_TO_EXCLUDE, check=True)
+    diff_result = run_git_command(["diff", "--diff-algorithm=minimal", base, "HEAD"] + exclude_args, check=True)
 
     return GitDiff(files=files, diff=diff_result.stdout)
 
