@@ -45,7 +45,7 @@ def print_banner():
     console.print()
 
 
-def _handle_pr_command(locale: str = None):
+def _handle_pr_command(locale: str = None, print_prompt: bool = False):
     """Facade for the PR generation interaction."""
     locale = locale or "en"
     config = get_config()
@@ -68,12 +68,18 @@ def _handle_pr_command(locale: str = None):
         console.print(f"      • {c}")
     console.print()
 
-    with console.status("[bold green]Generating PR description..."):
-        pr_text = generate_pr_description(config, branch, diff, commits, locale)
+    if print_prompt:
+        pr_text = generate_pr_description(config, branch, diff, commits, locale, print_prompt=True)
+        copy_to_clipboard(pr_text)
+        console.print("[bold green]PR prompt copied to clipboard![/bold green]\n")
+        console.print(pr_text)
+    else:
+        with console.status("[bold green]Generating PR description..."):
+            pr_text = generate_pr_description(config, branch, diff, commits, locale)
 
-    copy_to_clipboard(pr_text)
-    console.print("[bold green]PR description copied to clipboard![/bold green]\n")
-    console.print(pr_text)
+        copy_to_clipboard(pr_text)
+        console.print("[bold green]PR description copied to clipboard![/bold green]\n")
+        console.print(pr_text)
 
 
 @click.group(invoke_without_command=True)
@@ -86,8 +92,9 @@ def _handle_pr_command(locale: str = None):
 @click.option("--copy", "-c", is_flag=True, help="Copy the selected message to clipboard instead of committing")
 @click.option("--pr", is_flag=True, help="Generate a PR description from the current branch and copy to clipboard")
 @click.option("--exclude", "-x", multiple=True, help="Files to exclude from the diff")
+@click.option("--print-prompt", "-p", is_flag=True, help="Don't use AI, just print and copy the generated prompt")
 @click.pass_context
-def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, exclude):
+def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, exclude, print_prompt):
     """pycommit-ai — AI-generated Git commits."""
     if ctx.invoked_subcommand is not None:
         return
@@ -98,7 +105,7 @@ def cli(ctx, locale, generate, stage_all, type, confirm, dry_run, copy, pr, excl
         assert_git_repo()
 
         if pr:
-            _handle_pr_command(locale)
+            _handle_pr_command(locale, print_prompt)
             return
 
         if stage_all:

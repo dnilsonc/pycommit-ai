@@ -102,6 +102,7 @@ pyc --pr
 | `--dry-run` | `-d` | Show generated messages without committing |
 | `--copy` | `-c` | Copy the selected message to clipboard instead of committing |
 | `--exclude` | `-x` | Files to exclude from the diff (can be used multiple times) |
+| `--print-prompt` | `-p` | Don't use AI, just print and copy the generated prompt |
 
 ### Examples
 
@@ -123,6 +124,9 @@ pyc -x another-file.txt
 
 # Generate a PR description and copy to clipboard
 pyc --pr
+
+# Just print the prompt that the AI would receive (useful for external UIs)
+pyc --pr --print-prompt
 ```
 
 > **Note:** Common lock files (`uv.lock`, `poetry.lock`, `package-lock.json`, etc.) are excluded from the diff by default.

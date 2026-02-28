@@ -30,10 +30,15 @@ def generate_commits_parallel(services: List[AIService]) -> Iterator[Tuple[str, 
                 yield "error", srv_name, f"Unexpected error: {str(e)}"
 
 
-def generate_pr_description(config: dict, branch: str, diff: GitDiff, commits: List[str], locale: str = "en") -> str:
+def generate_pr_description(config: dict, branch: str, diff: GitDiff, commits: List[str], locale: str = "en", print_prompt: bool = False) -> str:
     """
     Generates a PR description using the configured Gemini service.
+    If print_prompt is True, returns the generated prompt without querying the API.
     """
+    prompt = generate_pr_prompt(diff.diff, commits, locale)
+    if print_prompt:
+        return prompt
+
     try:
         from google import genai
         from google.genai import types
@@ -46,8 +51,6 @@ def generate_pr_description(config: dict, branch: str, diff: GitDiff, commits: L
 
     if not api_key:
         raise KnownError("PR generation requires a Gemini API key. Run 'pycommit-ai config set GEMINI.key=YOUR_KEY'")
-
-    prompt = generate_pr_prompt(diff.diff, commits, locale)
 
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
