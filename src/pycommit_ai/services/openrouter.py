@@ -13,8 +13,14 @@ class OpenRouterService(AIService):
         if not self.api_key:
             raise AIServiceError("OpenRouter API key is required. Run 'pycommit-ai config set OPENROUTER.key=YOUR_KEY'")
             
-        base_url = self.service_config.get("url", "https://openrouter.ai/api")
-        path = self.service_config.get("path", "/v1")
+        # Use https://openrouter.ai/api/v1 as default base_url to match OpenAI SDK expectations
+        base_url = self.service_config.get("url", "https://openrouter.ai/api/v1")
+        path = self.service_config.get("path", "")
+        
+        # The OpenAI client automatically appends /chat/completions
+        if path.endswith("/chat/completions"):
+            path = path[:-17]
+
         if path and not base_url.endswith(path):
             if path.startswith("/") and base_url.endswith("/"):
                 base_url = base_url[:-1] + path
