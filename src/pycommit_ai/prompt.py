@@ -191,6 +191,12 @@ def generate_prompt(options: Dict[str, Any]) -> str:
     return f"{base}\n{final_prompt(commit_type, generate, locale)}"
 
 def generate_user_prompt(diff: str) -> str:
+    # Truncate diff to avoid payload too large errors (e.g. 413 from Groq)
+    max_diff_length = 50000
+    if len(diff) > max_diff_length:
+        diff_info = f"\n\n... (diff truncated due to length: {len(diff)} > {max_diff_length} chars) ..."
+        diff = diff[:max_diff_length] + diff_info
+
     return (
         "Please analyze the following diff and generate commit message(s) based on the changes:\n\n"
         f"```diff\n{diff}\n```\n\n"
