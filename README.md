@@ -6,40 +6,28 @@ Inspired by [aicommit2](https://github.com/tak-bro/aicommit2), rewritten in Pyth
 
 ## ✨ Features
 
-- 🤖 **Multi-provider support** — Gemini, OpenAI, Groq, and OpenRouter running in parallel
+- 🤖 **Multi-provider support** — Gemini, OpenAI, Groq, and OpenRouter
 - 📝 **Conventional Commits & Gitmoji** — choose your preferred commit style
 - 🌍 **Multilingual** — generate messages in any locale (e.g., `en`, `pt`, `es`)
 - ⚡ **Concurrent generation** — queries all configured providers at once
-- 🎨 **Interactive selection** — pick the best message from all suggestions
 - 🚀 **Pull Request Generation** — generates PR descriptions from branch diffs
 - 🔧 **Flexible configuration** — INI file, environment variables, or CLI flags
-- ⌨️ **Quick alias** — use `pyc` as a fast shortcut for `pycommit-ai`
+- ⌨️ **Quick alias** — use `pyc` as a fast shortcut
 
 ## 📦 Installation
 
 **Requirements:** Python ≥ 3.13, [uv](https://docs.astral.sh/uv/)
 
-### Global install (recommended)
+### Global Install
 
 ```bash
-# Install from GitHub
 uv tool install git+https://github.com/dnilsonc/pycommit-ai.git
-
-# Or clone and install locally
-git clone https://github.com/dnilsonc/pycommit-ai.git
-cd pycommit-ai
-uv tool install .
 ```
+*(The `pycommit-ai` command and `pyc` short alias will be available globally)*
 
-```
-
-The `pycommit-ai` command (and its short alias `pyc`) will be available globally in any directory.
-
+**Update/Uninstall:**
 ```bash
-# Update to latest version
 uv tool upgrade pycommit-ai
-
-# Uninstall
 uv tool uninstall pycommit-ai
 ```
 
@@ -53,8 +41,7 @@ uv tool uninstall pycommit-ai
 
 ## 🚀 Quick Start
 
-### 1. Configure an AI provider
-
+1. **Configure an AI provider (or multiple)**
 ```bash
 # Gemini (default model: gemini-2.5-flash)
 pycommit-ai config set GEMINI.key=YOUR_GEMINI_API_KEY
@@ -69,26 +56,17 @@ pycommit-ai config set GROQ.key=YOUR_GROQ_API_KEY
 pycommit-ai config set OPENROUTER.key=YOUR_OPENROUTER_API_KEY
 ```
 
-You can configure **multiple providers** — they will all run in parallel.
-
-### 2. Stage your changes and run
-
+2. **Stage your changes and run**
 ```bash
 git add .
 pycommit-ai
 ```
 
-Or stage everything automatically:
-
-```bash
-pyc --all
-```
-
-### 3. Generate a Pull Request description
-
+3. **Generate a Pull Request description**
 ```bash
 pyc --pr
 ```
+*(Optionally, set a custom PR template: `pyc config set PR.templatePath=~/my-pr-template.md`)*
 
 ## 🏳️ CLI Flags
 
@@ -107,29 +85,15 @@ pyc --pr
 ### Examples
 
 ```bash
-# Generate 3 messages per model in Portuguese
-pycommit-ai -g 3 -l pt
-
-# Gitmoji style, stage all, dry run
-pycommit-ai -a -t gitmoji -d
-
-# Copy the message to clipboard instead of committing
-pycommit-ai -c
-
-# Auto-commit with the first suggestion
-pycommit-ai -y
-
-# Exclude lock files from the diff
-pyc -x another-file.txt
-
-# Generate a PR description and copy to clipboard
-pyc --pr
-
-# Just print the prompt that the AI would receive (useful for external UIs)
-pyc --pr --print-prompt
+pycommit-ai -g 3 -l pt             # 3 messages per model in Portuguese
+pycommit-ai -a -t gitmoji -y       # Gitmoji, stage all, auto-commit
+pycommit-ai -c                     # Copy message to clipboard instead of committing
+pyc -x "*-lock.json"               # Exclude lock files from diff
+pyc --pr                           # Generate a PR description
+pyc --pr --print-prompt            # Print the prompt without calling the AI
 ```
 
-> **Note:** Common lock files (`uv.lock`, `poetry.lock`, `package-lock.json`, etc.) are excluded from the diff by default.
+> **Note:** Common lock files (`uv.lock`, `package-lock.json`, etc.) are excluded by default.
 
 ## ⚙️ Configuration
 
@@ -138,23 +102,11 @@ Configuration is stored in `~/.config/pycommit-ai/config.ini` (follows XDG).
 ### Config Commands
 
 ```bash
-# Set a value
-pycommit-ai config set KEY=VALUE
-
-# Set a provider-specific value
-pycommit-ai config set GEMINI.model=gemini-2.5-pro
-
-# Get a value
-pycommit-ai config get GEMINI.model
-
-# List all configuration
-pycommit-ai config list
-
-# Delete a setting
-pycommit-ai config del GEMINI.model
-
-# Show config file path
-pycommit-ai config path
+pycommit-ai config set KEY=VALUE          # Set a value
+pycommit-ai config get KEY                # Get a value
+pycommit-ai config list                   # List all keys
+pycommit-ai config del KEY                # Delete a key
+pycommit-ai config path                   # Show config file path
 ```
 
 ### Available Settings
@@ -171,6 +123,8 @@ pycommit-ai config path
 | `topP` | `1.0` | Nucleus sampling parameter |
 | `systemPrompt` | — | Custom system prompt (inline) |
 | `systemPromptPath` | — | Path to a custom system prompt file |
+| `PR.template` | — | Custom PR template (inline markdown) |
+| `PR.templatePath` | — | **Recommended:** Path to a `.md` custom PR template file |
 
 ### Provider Settings
 
