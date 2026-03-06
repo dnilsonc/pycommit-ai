@@ -113,6 +113,17 @@ def get_config(cli_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]
             
         config[service] = service_config
 
+    # Extract PR config
+    pr_config = {}
+    if parser.has_section("PR"):
+        for k, v in parser.items("PR"):
+            pr_config[k] = v
+    for k, v in cli_overrides.items():
+        if k.startswith("PR."):
+            prop = k.split(".", 1)[1]
+            pr_config[prop] = v
+    config["PR"] = pr_config
+
     return config
 
 

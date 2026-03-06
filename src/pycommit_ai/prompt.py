@@ -224,14 +224,29 @@ In this PR ...
 """
 
 
-def generate_pr_prompt(diff: str, commits: list[str], locale: str = "en") -> str:
+def generate_pr_prompt(diff: str, commits: list[str], locale: str = "en", pr_config: Optional[Dict[str, Any]] = None) -> str:
     commits_text = "\n".join(f"- {c}" for c in commits) if commits else "No commits found."
+    pr_config = pr_config or {}
+
+    template = PR_TEMPLATE
+    custom_template = pr_config.get("template")
+    template_path = pr_config.get("templatePath")
+    
+    if custom_template:
+        template = custom_template.replace("\\n", "\n")
+    elif template_path:
+        path = Path(template_path).expanduser().resolve()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                template = f.read()
+        except Exception:
+            pass # fall back to PR_TEMPLATE
 
     return (
         "You are a Pull Request description writer.\n\n"
         f"Write the PR description in {locale}.\n\n"
         "Here is the PR template you MUST fill in:\n\n"
-        f"```\n{PR_TEMPLATE}```\n\n"
+        f"```\n{template}```\n\n"
         "Rules:\n"
         "- Complete the 'In this PR ...' section with a clear, concise summary (2-4 lines max)\n"
         "- Check the appropriate Type of Change checkbox(es) using [x]\n"
