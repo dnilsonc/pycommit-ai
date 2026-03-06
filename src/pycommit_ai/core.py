@@ -35,7 +35,7 @@ def generate_pr_description(config: dict, branch: str, diff: GitDiff, commits: L
     Generates a PR description using the configured Gemini service.
     If print_prompt is True, returns the generated prompt without querying the API.
     """
-    prompt = generate_pr_prompt(diff.diff, commits, locale)
+    prompt = generate_pr_prompt(diff.diff, commits, locale, pr_config=config.get("PR", {}))
     if print_prompt:
         return prompt
 
